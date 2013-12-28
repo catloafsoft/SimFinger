@@ -15,7 +15,6 @@
 	
 	NSWindow *pointerOverlay;
 	NSWindow *hardwareOverlay;
-	NSWindow *fadeOverlay;
 	
 	BOOL pointerOverlayIsHidden;
 	BOOL hardwareOverlayIsHidden;

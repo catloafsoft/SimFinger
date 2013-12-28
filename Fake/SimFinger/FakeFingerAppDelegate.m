@@ -64,41 +64,41 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 {
 	if(AXAPIEnabled())
 	{
-    __block NSRunningApplication *simulatorApplication = [self runningSimulatorApplication];
-    if (simulatorApplication == nil) {
-      // This line is a really ugly, hacky way to get the simulator to resize upon first loading.
-      // If you can fix this, do it soon please.
-      [self performSelector:@selector(positionSimulatorWindow:) withObject:nil afterDelay:3.0f];
-
-      // Launch the simulator if it isn't running
-      [[NSWorkspace sharedWorkspace] launchAppWithBundleIdentifier:kiOSSimBundleID
-                                                           options:NSWorkspaceLaunchDefault
-                                    additionalEventParamDescriptor:nil
-                                                  launchIdentifier:nil];
-      __block BOOL isWaitingForSimulatorToLaunch = YES;
-      // Wait in background for simulator to launch.
-      NSDate *startTime = [NSDate date];
-      dispatch_async(dispatch_get_current_queue(), ^{
-        while (simulatorApplication == nil) {
-          simulatorApplication = [self runningSimulatorApplication];
-          sleep(1);
-          // Just in case, let's timeout after a small interval so we don't stay here forever.
-          if ([[NSDate date] timeIntervalSinceDate:startTime] > kTimeoutToLaunchSimulatorSeconds) {
-            isWaitingForSimulatorToLaunch = NO;
-          }
+        __block NSRunningApplication *simulatorApplication = [self runningSimulatorApplication];
+        if (simulatorApplication == nil) {
+            // This line is a really ugly, hacky way to get the simulator to resize upon first loading.
+            // If you can fix this, do it soon please.
+            [self performSelector:@selector(positionSimulatorWindow:) withObject:nil afterDelay:3.0f];
+            
+            // Launch the simulator if it isn't running
+            [[NSWorkspace sharedWorkspace] launchAppWithBundleIdentifier:kiOSSimBundleID
+                                                                 options:NSWorkspaceLaunchDefault
+                                          additionalEventParamDescriptor:nil
+                                                        launchIdentifier:nil];
+            __block BOOL isWaitingForSimulatorToLaunch = YES;
+            // Wait in background for simulator to launch.
+            NSDate *startTime = [NSDate date];
+            dispatch_async(dispatch_get_current_queue(), ^{
+                while (simulatorApplication == nil) {
+                    simulatorApplication = [self runningSimulatorApplication];
+                    sleep(1);
+                    // Just in case, let's timeout after a small interval so we don't stay here forever.
+                    if ([[NSDate date] timeIntervalSinceDate:startTime] > kTimeoutToLaunchSimulatorSeconds) {
+                        isWaitingForSimulatorToLaunch = NO;
+                    }
+                }
+            });
+            while (isWaitingForSimulatorToLaunch) {
+                [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+            }
         }
-      });
-      while (isWaitingForSimulatorToLaunch) {
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
-      }
-    }
-    if (simulatorApplication == nil) {
-      NSRunAlertPanel(@"Couldn't find Simulator after launching", @"Couldn't find Simulator after launching.", @"OK", nil, nil, nil);
-      return NULL;
-    }
-    pid_t pid = simulatorApplication.processIdentifier;
-    AXUIElementRef element = AXUIElementCreateApplication(pid);
-    return element;
+        if (simulatorApplication == nil) {
+            NSRunAlertPanel(@"Couldn't find Simulator after launching", @"Couldn't find Simulator after launching.", @"OK", nil, nil, nil);
+            return NULL;
+        }
+        pid_t pid = simulatorApplication.processIdentifier;
+        AXUIElementRef element = AXUIElementCreateApplication(pid);
+        return element;
 	} else {
 		NSRunAlertPanel(@"Universal Access Disabled", @"You must enable access for assistive devices in the System Preferences, under Universal Access.", @"OK", nil, nil, nil);
 	}
@@ -149,46 +149,31 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 			if((int)size.width == iPhoneWidth && (int)size.height == iPhoneHeight) {
 				[hardwareOverlay setContentSize:NSMakeSize(634, 985)];
 				[hardwareOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"iPhoneFrame"]]];
-				
-				[fadeOverlay setContentSize:NSMakeSize(634,985)];
-				[fadeOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"FadeFrame"]]];
-				
+								
 				supportedSize = YES;
 			} else if((int)size.width == iPhoneHeight && (int)size.height == iPhoneWidth) {
 				[hardwareOverlay setContentSize:NSMakeSize(985,634)];
 				[hardwareOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"iPhoneFrameLandscape_right"]]];
-				
-				[fadeOverlay setContentSize:NSMakeSize(985,634)];
-				[fadeOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"FadeFrameLandscape"]]];
 				
 				supportedSize = YES;
 				landscape = YES;
 			} else if ((int)size.width == iPadWidth && (int)size.height == iPadHeight) {
 				[hardwareOverlay setContentSize:NSMakeSize(1128, 1410)];
 				[hardwareOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"iPadFrame"]]];
-				
-				[fadeOverlay setContentSize:NSMakeSize(1128, 1410)];
-				[fadeOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"iPadFade"]]];
-				
+								
 				supportedSize = YES;
 				iPadMode = YES;
 			} else if ((int)size.width == iPadHeight && (int)size.height == iPadWidth) {
 				[hardwareOverlay setContentSize:NSMakeSize(1410, 1128)];
 				[hardwareOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"iPadFrameLandscape_right"]]];
-				
-				[fadeOverlay setContentSize:NSMakeSize(1128, 1410)];
-				[fadeOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"iPadFadeLandscape"]]];
-				
+							
 				supportedSize = YES;
 				iPadMode = YES;
 				landscape = YES;
 			} else if ((int)size.width == iPhone5Width && (int)size.height == iPhone5Height) {
                 [hardwareOverlay setContentSize:NSMakeSize(634, 985)];
 				[hardwareOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"iPhone5Frame"]]];
-				
-				[fadeOverlay setContentSize:NSMakeSize(634,985)];
-				[fadeOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"FadeFrame"]]];
-                
+				      
                 supportedSize = YES;
 				iPhone5Mode = YES;
             }
@@ -229,7 +214,7 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 
 - (NSString *)iosVersion
 {
-	return @"6.1"; // Latest iOS version, for applying preferences.
+	return @"7.0"; // Latest iOS version, for applying preferences.
 }
 
 - (NSString *)springboardPrefsPath
@@ -411,11 +396,9 @@ enum {
 {
 	if(hardwareOverlayIsHidden) {
 		[hardwareOverlay orderFront:nil];
-		[fadeOverlay orderFront:nil];
 		[sender setState:NSOffState];
 	} else {
 		[hardwareOverlay orderOut:nil];
-		[fadeOverlay orderOut:nil];
 		[sender setState:NSOnState];
 	}
 	hardwareOverlayIsHidden = !hardwareOverlayIsHidden;
@@ -476,15 +459,7 @@ CGEventRef tapCallBack(CGEventTapProxy proxy, CGEventType type, CGEventRef event
 	[pointerOverlay setIgnoresMouseEvents:YES];
 	[self _updateWindowPosition];
 	[pointerOverlay orderFront:nil];
-	
-	fadeOverlay = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 634, 985) styleMask:NSBorderlessWindowMask backing:NSBackingStoreBuffered defer:NO];
-	[fadeOverlay setAlphaValue:1.0];
-	[fadeOverlay setOpaque:NO];
-	[fadeOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"FadeFrame"]]];
-	[fadeOverlay setIgnoresMouseEvents:YES];
-	[fadeOverlay setLevel:NSFloatingWindowLevel + 1];
-	[fadeOverlay orderFront:nil];
-	
+		
 	CGEventMask mask =	CGEventMaskBit(kCGEventLeftMouseDown) |
     CGEventMaskBit(kCGEventLeftMouseUp) |
     CGEventMaskBit(kCGEventLeftMouseDragged) |
