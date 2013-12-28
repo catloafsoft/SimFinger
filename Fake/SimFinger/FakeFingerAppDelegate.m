@@ -9,6 +9,9 @@
 #import "FakeFingerAppDelegate.h"
 #import <Carbon/Carbon.h>
 
+static NSString *kiOSSimBundleID = @"com.apple.iphonesimulator";
+static NSTimeInterval kTimeoutToLaunchSimulatorSeconds = 10.0f;
+
 void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef element, CFStringRef notificationName, void * contextData)
 {
     FakeFingerAppDelegate * delegate= (FakeFingerAppDelegate *) contextData;
@@ -27,7 +30,7 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 	AXUIElementRef frontWindow = NULL;
 	AXError err = AXUIElementCopyAttributeValue( simulatorApp, kAXFocusedWindowAttribute, (CFTypeRef *) &frontWindow );
 	if ( err != kAXErrorSuccess ) return;
-
+    
 	AXObserverRef observer = NULL;
 	pid_t pid;
 	AXUIElementGetPid(simulatorApp, &pid);
@@ -36,32 +39,66 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 	
 	AXObserverAddNotification( observer, frontWindow, kAXResizedNotification, self );
 	AXObserverAddNotification( observer, frontWindow, kAXMovedNotification, self );
-
+    
 	CFRunLoopAddSource( [[NSRunLoop currentRunLoop] getCFRunLoop],  AXObserverGetRunLoopSource(observer),  kCFRunLoopDefaultMode );
-		
+    
+}
+
+// Returns nil if there is no iOS Simulator running, otherwise the simulator based on the bundleid
+// kiOSSimBundleID above.
+- (NSRunningApplication *)runningSimulatorApplication
+{
+		NSArray *applications = [[NSWorkspace sharedWorkspace] runningApplications];
+
+		for(NSRunningApplication *application in applications)
+		{
+			if([application.bundleIdentifier isEqualToString:kiOSSimBundleID])
+			{
+        return application;
+			}
+		}
+  return nil;
 }
 
 - (AXUIElementRef)simulatorApplication
 {
 	if(AXAPIEnabled())
 	{
-		NSArray *applications = [[NSWorkspace sharedWorkspace] runningApplications];
-		
-		for(NSRunningApplication *application in applications)
-		{
-			if([application.localizedName isEqualToString:@"iOS Simulator"])
-			{
-				pid_t pid = application.processIdentifier;
-				
-				[[NSWorkspace sharedWorkspace] launchAppWithBundleIdentifier:application.bundleIdentifier
-																	 options:NSWorkspaceLaunchDefault 
-											  additionalEventParamDescriptor:nil 
-															launchIdentifier:nil];
-				
-				AXUIElementRef element = AXUIElementCreateApplication(pid);
-				return element;
-			}
-		}
+    __block NSRunningApplication *simulatorApplication = [self runningSimulatorApplication];
+    if (simulatorApplication == nil) {
+      // This line is a really ugly, hacky way to get the simulator to resize upon first loading.
+      // If you can fix this, do it soon please.
+      [self performSelector:@selector(positionSimulatorWindow:) withObject:nil afterDelay:3.0f];
+
+      // Launch the simulator if it isn't running
+      [[NSWorkspace sharedWorkspace] launchAppWithBundleIdentifier:kiOSSimBundleID
+                                                           options:NSWorkspaceLaunchDefault
+                                    additionalEventParamDescriptor:nil
+                                                  launchIdentifier:nil];
+      __block BOOL isWaitingForSimulatorToLaunch = YES;
+      // Wait in background for simulator to launch.
+      NSDate *startTime = [NSDate date];
+      dispatch_async(dispatch_get_current_queue(), ^{
+        while (simulatorApplication == nil) {
+          simulatorApplication = [self runningSimulatorApplication];
+          sleep(1);
+          // Just in case, let's timeout after a small interval so we don't stay here forever.
+          if ([[NSDate date] timeIntervalSinceDate:startTime] > kTimeoutToLaunchSimulatorSeconds) {
+            isWaitingForSimulatorToLaunch = NO;
+          }
+        }
+      });
+      while (isWaitingForSimulatorToLaunch) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+      }
+    }
+    if (simulatorApplication == nil) {
+      NSRunAlertPanel(@"Couldn't find Simulator after launching", @"Couldn't find Simulator after launching.", @"OK", nil, nil, nil);
+      return NULL;
+    }
+    pid_t pid = simulatorApplication.processIdentifier;
+    AXUIElementRef element = AXUIElementCreateApplication(pid);
+    return element;
 	} else {
 		NSRunAlertPanel(@"Universal Access Disabled", @"You must enable access for assistive devices in the System Preferences, under Universal Access.", @"OK", nil, nil, nil);
 	}
@@ -100,11 +137,14 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 			
 			BOOL supportedSize = NO;
 			BOOL iPadMode = NO;
+            BOOL iPhone5Mode = NO;
 			BOOL landscape = NO;
 			int iPhoneWidth = 368;
 			int iPhoneHeight = 716;
 			int iPadWidth = 852;
 			int iPadHeight = 1108;
+            int iPhone5Width = 320;
+            int iPhone5Height = 590;
 			
 			if((int)size.width == iPhoneWidth && (int)size.height == iPhoneHeight) {
 				[hardwareOverlay setContentSize:NSMakeSize(634, 985)];
@@ -142,7 +182,16 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 				supportedSize = YES;
 				iPadMode = YES;
 				landscape = YES;
-			}
+			} else if ((int)size.width == iPhone5Width && (int)size.height == iPhone5Height) {
+                [hardwareOverlay setContentSize:NSMakeSize(634, 985)];
+				[hardwareOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"iPhone5Frame"]]];
+				
+				[fadeOverlay setContentSize:NSMakeSize(634,985)];
+				[fadeOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"FadeFrame"]]];
+                
+                supportedSize = YES;
+				iPhone5Mode = YES;
+            }
 			
 			if(supportedSize) {
 				Boolean settable;
@@ -150,7 +199,10 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 				
 				CGPoint point;
 				if(!iPadMode) {
-					if(!landscape) {
+                    if(iPhone5Mode) {
+                        point.x = 159;
+                        point.y = screenRect.size.height - size.height - 209;
+                    } else if(!landscape) {
 						point.x = 121+9;
 						point.y = screenRect.size.height - size.height - 135 - 13;
 					} else {
@@ -164,12 +216,12 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 					} else {
 						point.x = 157;
                         point.y = screenRect.size.height - size.height - 138;
-					}					
+					}
 				}
 				AXValueRef pointValue = AXValueCreate(kAXValueCGPointType, &point);
 				
 				AXUIElementSetAttributeValue(subElement, kAXPositionAttribute, (CFTypeRef)pointValue);
-			}							
+			}
 			
 		}
 	}
@@ -177,7 +229,7 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 
 - (NSString *)iosVersion
 {
-	return @"4.0.2";
+	return @"6.1"; // Latest iOS version, for applying preferences.
 }
 
 - (NSString *)springboardPrefsPath
@@ -200,7 +252,7 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 {
 	NSString *error;
 	NSData *plist = [NSPropertyListSerialization dataFromPropertyList:(id)springboardPrefs
-															   format:kCFPropertyListBinaryFormat_v1_0 
+															   format:kCFPropertyListBinaryFormat_v1_0
 													 errorDescription:&error];
 	NSLog(@"%@", [self springboardPrefsPath]);
 	[plist writeToFile:[self springboardPrefsPath] atomically:YES];
@@ -286,8 +338,8 @@ enum {
 {
 	NSError *error;
 	NSArray *items = [NSArray arrayWithObjects:
-					  @"FakeAppStore", 
-					  @"FakeCalculator", 
+					  @"FakeAppStore",
+					  @"FakeCalculator",
 					  @"FakeCalendar",
 					  @"FakeCamera",
 					  @"FakeClock",
@@ -400,6 +452,7 @@ CGEventRef tapCallBack(CGEventTapProxy proxy, CGEventType type, CGEventRef event
 			[delegate mouseMoved];
 			break;
 	}
+  hideTheCursor();
 	return event;
 }
 
@@ -432,27 +485,49 @@ CGEventRef tapCallBack(CGEventTapProxy proxy, CGEventType type, CGEventRef event
 	[fadeOverlay setLevel:NSFloatingWindowLevel + 1];
 	[fadeOverlay orderFront:nil];
 	
-	CGEventMask mask =	CGEventMaskBit(kCGEventLeftMouseDown) | 
-						CGEventMaskBit(kCGEventLeftMouseUp) | 
-						CGEventMaskBit(kCGEventLeftMouseDragged) | 
-						CGEventMaskBit(kCGEventMouseMoved);
-
+	CGEventMask mask =	CGEventMaskBit(kCGEventLeftMouseDown) |
+    CGEventMaskBit(kCGEventLeftMouseUp) |
+    CGEventMaskBit(kCGEventLeftMouseDragged) |
+    CGEventMaskBit(kCGEventMouseMoved);
+    
 	CFMachPortRef tap = CGEventTapCreate(kCGAnnotatedSessionEventTap,
-									kCGTailAppendEventTap,
-									kCGEventTapOptionListenOnly,
-									mask,
-									tapCallBack,
-									self);
+                                         kCGTailAppendEventTap,
+                                         kCGEventTapOptionListenOnly,
+                                         mask,
+                                         tapCallBack,
+                                         self);
 	
 	CFRunLoopSourceRef runLoopSource = CFMachPortCreateRunLoopSource(NULL, tap, 0);
 	CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, kCFRunLoopCommonModes);
 	
 	CFRelease(runLoopSource);
 	CFRelease(tap);
-	
+
 	[self registerForSimulatorWindowResizedNotification];
 	[self positionSimulatorWindow:nil];
+  hideTheCursor();
+    
 	NSLog(@"Repositioned simulator window.");
+}
+
+void hideTheCursor()
+{
+    // The not so hacky way:
+    //    CGDirectDisplayID myId = CGMainDisplayID();
+    //    CGDisplayHideCursor(kCGDirectMainDisplay);
+    //    BOOL isCursorVisible = CGCursorIsVisible();
+    
+    // The hacky way:
+    void CGSSetConnectionProperty(int, int, CFStringRef, CFBooleanRef);
+    int _CGSDefaultConnection();
+    CFStringRef propertyString;
+    
+    // Hack to make background cursor setting work
+    propertyString = CFStringCreateWithCString(NULL, "SetsCursorInBackground", kCFStringEncodingUTF8);
+    CGSSetConnectionProperty(_CGSDefaultConnection(), _CGSDefaultConnection(), propertyString, kCFBooleanTrue);
+    CFRelease(propertyString);
+    // Hide the cursor and wait
+    CGDisplayHideCursor(kCGDirectMainDisplay);
 }
 
 @end
